@@ -1,0 +1,74 @@
+name: SW Muzik Oynatici APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Projeyi hazirla
+        run: |
+          if [ -f settings.gradle.kts ]; then
+            echo "DIR=." >> "$GITHUB_ENV"
+          else
+            ZIP=$(ls *.zip | head -n 1)
+            unzip -q "$ZIP" -d proje
+            if [ -f proje/settings.gradle.kts ]; then
+              echo "DIR=proje" >> "$GITHUB_ENV"
+            else
+              echo "DIR=proje/$(ls proje | head -n 1)" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Android SDK paketleri
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKM" ]; then
+            yes | "$SDKM" --licenses > /dev/null || true
+            "$SDKM" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+          fi
+
+      - name: APK derle
+        run: |
+          cd "$DIR"
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: APK dosyasini hazirla
+        run: |
+          mkdir -p out
+          cp "$DIR/app/build/outputs/apk/debug/app-debug.apk" out/SW-Muzik-Oynatici.apk
+
+      - name: Artifact olarak yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: SW-Muzik-Oynatici-APK
+          path: out/SW-Muzik-Oynatici.apk
+
+      - name: Release olarak yayinla (APK dogrudan indirilebilsin)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "v${{ github.run_number }}" out/SW-Muzik-Oynatici.apk \
+            --target "${{ github.sha }}" \
+            --title "SW Muzik Oynatici v${{ github.run_number }}" \
+            --notes "Telefona/tablete indirip kurabilecegin APK dosyasi."
